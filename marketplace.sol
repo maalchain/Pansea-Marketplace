@@ -54,6 +54,7 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
     mapping(uint256 => NFTListing) public NFTListings;
     mapping(uint256 => Offer) public offers;
     mapping(uint256 => mapping(uint256 => uint256)) public _offersByListing;
+    mapping(address => mapping(uint256 => uint256)) public _offersByNFTAddress;
     mapping(uint256 => uint256[]) public NFTListingsByCollection;
     uint256 public collectionIdCounter;
     uint256 public listingIdCounter;
@@ -89,7 +90,7 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
     event ListingStatusUpdated(uint256 lisitngId, uint256 statusCode);
     event OfferCreated(
         uint256 offerId,
-        uint256 collectionId,
+        uint256 listingId,
         uint256 TokenId,
         uint256 quantityOfferedForPurchase,
         IERC20 tokenAdd,
@@ -125,8 +126,6 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         require(msg.sender == owner, "Only owner can call this function");
         _;
     }
-
-
 
     function checkERC721(address nftContractAddress)
         internal
@@ -532,13 +531,6 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
             listing.NFTContractAddress != address(0),
             "Invalid NFT contract address"
         );
-        require(
-            IERC1155(listing.NFTContractAddress).isApprovedForAll(
-                listing.seller,
-                address(this)
-            ),
-            "Contract not approved to transfer NFTs"
-        );
 
         IERC20 settlementToken = listing.tokenAdd;
 
@@ -681,6 +673,40 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         Offer storage offer = offers[_offerId];
         NFTListing storage listing = NFTListings[offer.listingId];
 
+        // Determine if NFT is ERC721 or ERC1155
+        bool isERC721 = checkERC721(listing.NFTContractAddress);
+        bool isERC1155 = checkERC1155(listing.NFTContractAddress);
+
+        // Additional validations based on NFT type
+        if (isERC721) {
+            // ERC721 specific validations
+            require(
+                IERC721(listing.NFTContractAddress).ownerOf(listing.TokenId) == msg.sender,
+                "Seller does not own the NFT"
+            );
+            require(
+                IERC721(listing.NFTContractAddress).getApproved(listing.TokenId) ==
+                    address(this),
+                "Marketplace contract is not approved to transfer NFT"
+            );
+        } else if (isERC1155) {
+            // ERC1155 specific validations
+            require(
+                IERC1155(listing.NFTContractAddress).balanceOf(msg.sender, listing.TokenId) >=
+                    listing.QuantityOnSale,
+                "Seller does not own enough NFTs"
+            );
+            require(
+                IERC1155(listing.NFTContractAddress).isApprovedForAll(
+                    msg.sender,
+                    address(this)
+                ),
+                "Marketplace contract is not approved to transfer NFTs"
+            );
+        } else {
+            revert("Not valid NFT");
+        }
+
         require(msg.sender == listing.seller, "Only seller can accept offers");
         require(offer.isActive == true, "Offer must be active");
         require(offer.offerExpireTime >= block.timestamp, "Offer has expired");
@@ -746,10 +772,6 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
                 "Failed to transfer seller value"
             );
         }
-
-        // Determine if NFT is ERC721 or ERC1155
-        bool isERC721 = checkERC721(listing.NFTContractAddress);
-        bool isERC1155 = checkERC1155(listing.NFTContractAddress);
 
         if (isERC721) {
             // Transfer NFT from seller to buyer
@@ -835,20 +857,20 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
                 "Not enough fund in your wallet!"
             );
             // Transfer Platform fees to platform owner
-            (bool platformFeeSuccess, ) = owner.call{value: platformFeeValue}(
-                ""
+            require(
+                payable(owner).send(platformFeeValue),
+                "Platform fee transfer failed"
             );
-            require(platformFeeSuccess, "Platform Fee transfer failed");
             // Transfer Royalty to collection owner
-            (bool royaltyFeeSuccess, ) = royaltyReceiver.call{
-                value: royaltyFeeValue
-            }("");
-            require(royaltyFeeSuccess, "Royalty transfer failed");
+            require(
+                payable(royaltyReceiver).send(royaltyFeeValue),
+                "Platform fee transfer failed"
+            );
             // Transfer the rest to the seller
-            (bool sellerAmntSuccess, ) = listing.seller.call{
-                value: sellerValue
-            }("");
-            require(sellerAmntSuccess, "Seller amount transfer failed");
+            require(
+                payable(listing.seller).send(sellerValue),
+                "Platform fee transfer failed"
+            );
         } else {
             require(
                 settlementToken.balanceOf(msg.sender) >= purchaseAmount,
