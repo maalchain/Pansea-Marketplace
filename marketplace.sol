@@ -118,9 +118,42 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         // USDT = _USDT;
     }
 
+    // Function to receive Ether
+    receive() external payable {}
+
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can call this function");
         _;
+    }
+
+
+
+    function checkERC721(address nftContractAddress)
+        internal
+        view
+        returns (bool)
+    {
+        try IERC721(nftContractAddress).supportsInterface(0x80ac58cd) returns (
+            bool supported
+        ) {
+            return supported;
+        } catch {
+            return false;
+        }
+    }
+
+    function checkERC1155(address nftContractAddress)
+        internal
+        view
+        returns (bool)
+    {
+        try IERC1155(nftContractAddress).supportsInterface(0xd9b67a26) returns (
+            bool supported
+        ) {
+            return supported;
+        } catch {
+            return false;
+        }
     }
 
     /* COllections */
@@ -298,8 +331,8 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         );
 
         // Determine if NFT is ERC721 or ERC1155
-        bool isERC721 = _supportsERC721Interface(NFTContractAddress);
-        bool isERC1155 = _supportsERC1155Interface(NFTContractAddress);
+        bool isERC721 = checkERC721(NFTContractAddress);
+        bool isERC1155 = checkERC1155(NFTContractAddress);
 
         // Additional validations based on NFT type
         if (isERC721) {
@@ -327,6 +360,8 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
                 ),
                 "Marketplace contract is not approved to transfer NFTs"
             );
+        } else {
+            revert("Not valid NFT");
         }
 
         listingIdCounter++;
@@ -387,39 +422,6 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
             listing.TokenId,
             _listingExpireTime
         );
-    }
-
-    // Check if the contract supports ERC721 interface
-    function _supportsERC721Interface(address contractAddress)
-        internal
-        view
-        returns (bool)
-    {
-        return _functionExists(contractAddress, "ownerOf(uint256)");
-    }
-
-    // Check if the contract supports ERC1155 interface
-    function _supportsERC1155Interface(address contractAddress)
-        internal
-        view
-        returns (bool)
-    {
-        return
-            _functionExists(
-                contractAddress,
-                "balanceOfBatch(address[],uint256[])"
-            );
-    }
-
-    // Helper function to check if a function exists on the contract
-    function _functionExists(
-        address contractAddress,
-        string memory functionName
-    ) internal view returns (bool) {
-        (bool success, bytes memory result) = contractAddress.staticcall(
-            abi.encodeWithSignature(functionName)
-        );
-        return success && result.length > 0;
     }
 
     function updateListingStatus(uint256 _listingId, uint256 _listingStatus)
@@ -715,17 +717,17 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
             (bool platformFeeSuccess, ) = owner.call{value: platformFeeValue}(
                 ""
             );
-            require(platformFeeSuccess, "MAAL transfer failed");
+            require(platformFeeSuccess, "Platform fee transfer failed");
             // Transfer Royalty to collection owner
             (bool royaltyFeeSuccess, ) = royaltyReceiver.call{
                 value: royaltyFeeValue
             }("");
-            require(royaltyFeeSuccess, "MAAL transfer failed");
+            require(royaltyFeeSuccess, "Royalty transfer failed");
             // Transfer the rest to the seller
             (bool sellerAmntSuccess, ) = listing.seller.call{
                 value: sellerValue
             }("");
-            require(sellerAmntSuccess, "MAAL transfer failed");
+            require(sellerAmntSuccess, "Seller amount transfer failed");
         } else {
             require(
                 settlementToken.balanceOf(address(this)) >= combinedValue,
@@ -746,8 +748,8 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         }
 
         // Determine if NFT is ERC721 or ERC1155
-        bool isERC721 = _supportsERC721Interface(listing.NFTContractAddress);
-        bool isERC1155 = _supportsERC1155Interface(listing.NFTContractAddress);
+        bool isERC721 = checkERC721(listing.NFTContractAddress);
+        bool isERC1155 = checkERC1155(listing.NFTContractAddress);
 
         if (isERC721) {
             // Transfer NFT from seller to buyer
@@ -879,8 +881,8 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         }
 
         // Determine if NFT is ERC721 or ERC1155
-        bool isERC721 = _supportsERC721Interface(listing.NFTContractAddress);
-        bool isERC1155 = _supportsERC1155Interface(listing.NFTContractAddress);
+        bool isERC721 = checkERC721(listing.NFTContractAddress);
+        bool isERC1155 = checkERC1155(listing.NFTContractAddress);
 
         if (isERC721) {
             // Transfer NFT from seller to buyer
