@@ -301,11 +301,6 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         bool isERC721 = _supportsERC721Interface(NFTContractAddress);
         bool isERC1155 = _supportsERC1155Interface(NFTContractAddress);
 
-        require(
-            isERC721 || isERC1155,
-            "NFT contract must be ERC721 or ERC1155"
-        );
-
         // Additional validations based on NFT type
         if (isERC721) {
             // ERC721 specific validations
@@ -318,7 +313,7 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
                     address(this),
                 "Marketplace contract is not approved to transfer NFT"
             );
-        } else {
+        } else if (isERC1155) {
             // ERC1155 specific validations
             require(
                 IERC1155(NFTContractAddress).balanceOf(msg.sender, TokenId) >=
@@ -400,10 +395,7 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         view
         returns (bool)
     {
-        return
-            _functionExists(contractAddress, "balanceOf(address)") &&
-            _functionExists(contractAddress, "ownerOf(uint256)") &&
-            _functionExists(contractAddress, "getApproved(uint256)");
+        return _functionExists(contractAddress, "ownerOf(uint256)");
     }
 
     // Check if the contract supports ERC1155 interface
@@ -753,15 +745,29 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
             );
         }
 
-        // Transfer NFT from seller to buyer
-        IERC1155 NFTContract = IERC1155(listing.NFTContractAddress);
-        NFTContract.safeTransferFrom(
-            listing.seller,
-            offer.offerCreator,
-            listing.TokenId,
-            offer.quantityOfferedForPurchase,
-            ""
-        );
+        // Determine if NFT is ERC721 or ERC1155
+        bool isERC721 = _supportsERC721Interface(listing.NFTContractAddress);
+        bool isERC1155 = _supportsERC1155Interface(listing.NFTContractAddress);
+
+        if (isERC721) {
+            // Transfer NFT from seller to buyer
+            IERC721 NFTContract = IERC721(listing.NFTContractAddress);
+            NFTContract.safeTransferFrom(
+                listing.seller,
+                offer.offerCreator,
+                listing.TokenId
+            );
+        } else if (isERC1155) {
+            // Transfer NFT from seller to buyer
+            IERC1155 NFTContract = IERC1155(listing.NFTContractAddress);
+            NFTContract.safeTransferFrom(
+                listing.seller,
+                offer.offerCreator,
+                listing.TokenId,
+                offer.quantityOfferedForPurchase,
+                ""
+            );
+        }
 
         // Remove offer from listing's offer list
         uint256[] storage offerList = listing.offers;
@@ -824,51 +830,77 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         if (settlementToken == IERC20(address(0x0))) {
             require(
                 (msg.sender).balance >= purchaseAmount,
-                "Not enough fund in the contract!"
+                "Not enough fund in your wallet!"
             );
             // Transfer Platform fees to platform owner
             (bool platformFeeSuccess, ) = owner.call{value: platformFeeValue}(
                 ""
             );
-            require(platformFeeSuccess, "MAAL transfer failed");
+            require(platformFeeSuccess, "Platform Fee transfer failed");
             // Transfer Royalty to collection owner
             (bool royaltyFeeSuccess, ) = royaltyReceiver.call{
                 value: royaltyFeeValue
             }("");
-            require(royaltyFeeSuccess, "MAAL transfer failed");
+            require(royaltyFeeSuccess, "Royalty transfer failed");
             // Transfer the rest to the seller
             (bool sellerAmntSuccess, ) = listing.seller.call{
                 value: sellerValue
             }("");
-            require(sellerAmntSuccess, "MAAL transfer failed");
+            require(sellerAmntSuccess, "Seller amount transfer failed");
         } else {
             require(
                 settlementToken.balanceOf(msg.sender) >= purchaseAmount,
                 "Not enough balance"
             );
             require(
-                settlementToken.transfer(owner, platformFeeValue),
+                settlementToken.transferFrom(
+                    msg.sender,
+                    owner,
+                    platformFeeValue
+                ),
                 "Failed to transfer platform fee"
             );
             require(
-                settlementToken.transfer(royaltyReceiver, royaltyFeeValue),
+                settlementToken.transferFrom(
+                    msg.sender,
+                    royaltyReceiver,
+                    royaltyFeeValue
+                ),
                 "Failed to transfer royalty fee"
             );
             require(
-                settlementToken.transfer(listing.seller, sellerValue),
+                settlementToken.transferFrom(
+                    msg.sender,
+                    listing.seller,
+                    sellerValue
+                ),
                 "Failed to transfer seller value"
             );
         }
 
-        // Transfer NFT from seller to buyer
-        IERC1155 NFTContract = IERC1155(listing.NFTContractAddress);
-        NFTContract.safeTransferFrom(
-            listing.seller,
-            msg.sender,
-            listing.TokenId,
-            _quantity,
-            ""
-        );
+        // Determine if NFT is ERC721 or ERC1155
+        bool isERC721 = _supportsERC721Interface(listing.NFTContractAddress);
+        bool isERC1155 = _supportsERC1155Interface(listing.NFTContractAddress);
+
+        if (isERC721) {
+            // Transfer NFT from seller to buyer
+            IERC721 NFTContract = IERC721(listing.NFTContractAddress);
+            NFTContract.safeTransferFrom(
+                listing.seller,
+                msg.sender,
+                listing.TokenId
+            );
+        } else if (isERC1155) {
+            // Transfer NFT from seller to buyer
+            IERC1155 NFTContract = IERC1155(listing.NFTContractAddress);
+            NFTContract.safeTransferFrom(
+                listing.seller,
+                msg.sender,
+                listing.TokenId,
+                _quantity,
+                ""
+            );
+        }
 
         // Emit event
         emit NFTBought(_listingId, _quantity, msg.sender);
