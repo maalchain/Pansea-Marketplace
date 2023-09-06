@@ -155,6 +155,25 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         }
     }
 
+    function payWithMAAL(address[] memory targets, uint256[] memory amounts)
+        public
+        payable
+    {
+        require(targets.length <= 100, "Cannot process more than 100 at once");
+        require(targets.length == amounts.length, "Length mismatched");
+
+        uint256 total;
+
+        // In case someone tries to claim the ether inside the contract
+        // by sending a higher sum of total amount than msg.value
+        require(total == msg.value, "Total mismatched");
+
+        for (uint256 i = 0; i < targets.length; i++) {
+            total += amounts[i];
+            payable(targets[i]).transfer(amounts[i]);
+        }
+    }
+
     /* COllections */
 
     function getCollectionsByOwner(address _owner)
@@ -538,9 +557,15 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         uint256 offerAmount = _quantityOfferedForPurchase * _pricePerNFT;
         if (offerAmount > 0) {
             if (settlementToken == IERC20(address(0x0))) {
-                // Perform the MAAL transfer
-                (bool success, ) = address(this).call{value: offerAmount}("");
-                require(success, "MAAL transfer failed");
+                // Prepare the arrays for payWithMAAL
+                address[] memory targets = new address[](1);
+                uint256[] memory amounts = new uint256[](1);
+
+                // Set the targets and amounts for the payments
+                targets[0] = address(this); // Platform fee recipient
+                amounts[0] = offerAmount; // Platform fee
+
+                payWithMAAL(targets, amounts);
             } else {
                 require(
                     settlementToken.balanceOf(msg.sender) >= offerAmount,
@@ -682,19 +707,23 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         if (isERC721) {
             // ERC721 specific validations
             require(
-                IERC721(listing.NFTContractAddress).ownerOf(listing.TokenId) == msg.sender,
+                IERC721(listing.NFTContractAddress).ownerOf(listing.TokenId) ==
+                    msg.sender,
                 "Seller does not own the NFT"
             );
             require(
-                IERC721(listing.NFTContractAddress).getApproved(listing.TokenId) ==
-                    address(this),
+                IERC721(listing.NFTContractAddress).getApproved(
+                    listing.TokenId
+                ) == address(this),
                 "Marketplace contract is not approved to transfer NFT"
             );
         } else if (isERC1155) {
             // ERC1155 specific validations
             require(
-                IERC1155(listing.NFTContractAddress).balanceOf(msg.sender, listing.TokenId) >=
-                    listing.QuantityOnSale,
+                IERC1155(listing.NFTContractAddress).balanceOf(
+                    msg.sender,
+                    listing.TokenId
+                ) >= listing.QuantityOnSale,
                 "Seller does not own enough NFTs"
             );
             require(
@@ -853,25 +882,21 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
 
         // Handle Transfers
         if (settlementToken == IERC20(address(0x0))) {
-            require(
-                (msg.sender).balance >= purchaseAmount,
-                "Not enough fund in your wallet!"
-            );
-            // Transfer Platform fees to platform owner
-            require(
-                payable(owner).send(platformFeeValue),
-                "Platform fee transfer failed"
-            );
-            // Transfer Royalty to collection owner
-            require(
-                payable(royaltyReceiver).send(royaltyFeeValue),
-                "Platform fee transfer failed"
-            );
-            // Transfer the rest to the seller
-            require(
-                payable(listing.seller).send(sellerValue),
-                "Platform fee transfer failed"
-            );
+            // Prepare the arrays for payWithMAAL
+            address[] memory targets = new address[](3);
+            uint256[] memory amounts = new uint256[](3);
+
+            // Set the targets and amounts for the payments
+            targets[0] = owner; // Platform fee recipient
+            amounts[0] = platformFeeValue; // Platform fee
+
+            targets[1] = royaltyReceiver; // Royalty fee recipient
+            amounts[1] = royaltyFeeValue; // Royalty fee
+
+            targets[2] = listing.seller; // Seller recipient
+            amounts[2] = sellerValue; // Seller value
+
+            payWithMAAL(targets, amounts);
         } else {
             require(
                 settlementToken.balanceOf(msg.sender) >= purchaseAmount,
@@ -1017,4 +1042,3 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         -------------------------------------------------------------------
     **/
 }
-
