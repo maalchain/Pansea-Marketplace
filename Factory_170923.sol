@@ -71,7 +71,7 @@ contract Pansea721NFTs is MAAL721A, Ownable {
         if (balance > 0) {
             uint256 index = 0;
             for (uint256 tokenId = 0; tokenId < totalSupply(); tokenId++) {
-                if (_ownerOf(tokenId) == owner) {
+                if (ownerOf(tokenId) == owner) {
                     ownedNFTs[index] = tokenId;
                     index++;
                 }
