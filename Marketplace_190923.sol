@@ -788,8 +788,12 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
 
         IERC20 settlementToken = offer.tokenAdd;
 
-        // Mark listing as sold
-        listing.listingStatus = 2;
+        // Mark listing as sold if all tokens are sold
+        if (offer.quantityOfferedForPurchase == listing.QuantityOnSale) {
+            listing.listingStatus = 2;
+        } else {
+            listing.QuantityOnSale -= offer.quantityOfferedForPurchase;
+        }
 
         // Mark offer as inactive
         offer.isActive = false;
@@ -1150,4 +1154,3 @@ contract MedinaNFTMarketplace is Pausable, ReentrancyGuard {
         -------------------------------------------------------------------
     **/
 }
-
